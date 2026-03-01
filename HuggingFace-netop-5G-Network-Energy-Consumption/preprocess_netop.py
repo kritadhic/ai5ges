@@ -110,13 +110,11 @@ ecstat = ecstat.dropna()
 print(f"    CLstat: {original_rows_cl - len(clstat)} rows removed")
 print(f"    ECstat: {original_rows_ec - len(ecstat)} rows removed")
 
-# Aggregate energy saving modes into a single metric
-print("  - Aggregating energy saving modes...")
+# Keep energy saving mode columns as separate features
+print("  - Energy saving mode columns...")
 esmode_cols = [col for col in clstat.columns if col.startswith('ESMode')]
 if esmode_cols:
-    # Sum all energy saving mode intensities
-    clstat['EnergySavingMode'] = clstat[esmode_cols].sum(axis=1)
-    print(f"    Combined {len(esmode_cols)} energy saving mode columns")
+    print(f"    Keeping {len(esmode_cols)} ESMode columns as separate features: {esmode_cols}")
 
 # =============================================================================
 # 4. FEATURE ENGINEERING
@@ -127,7 +125,6 @@ print("\n[4/6] Feature engineering...")
 print("  - Creating time-based features...")
 clstat['hour_of_day'] = clstat['Time'].dt.hour
 clstat['day_of_week'] = clstat['Time'].dt.dayofweek
-clstat['day_of_month'] = clstat['Time'].dt.day
 clstat['is_weekend'] = (clstat['day_of_week'] >= 5).astype(int)
 clstat['is_peak_hour'] = clstat['hour_of_day'].apply(
     lambda x: 1 if (8 <= x <= 10) or (17 <= x <= 19) else 0
@@ -139,7 +136,6 @@ clstat['is_night_time'] = clstat['hour_of_day'].apply(
 # Time-based features for ECstat
 ecstat['hour_of_day'] = ecstat['Time'].dt.hour
 ecstat['day_of_week'] = ecstat['Time'].dt.dayofweek
-ecstat['day_of_month'] = ecstat['Time'].dt.day
 ecstat['is_weekend'] = (ecstat['day_of_week'] >= 5).astype(int)
 ecstat['is_peak_hour'] = ecstat['hour_of_day'].apply(
     lambda x: 1 if (8 <= x <= 10) or (17 <= x <= 19) else 0
@@ -147,6 +143,7 @@ ecstat['is_peak_hour'] = ecstat['hour_of_day'].apply(
 ecstat['is_night_time'] = ecstat['hour_of_day'].apply(
     lambda x: 1 if (22 <= x <= 23) or (0 <= x <= 6) else 0
 )
+print("    Note: day_of_month excluded (only 7 days of data - not meaningful)")
 
 # Create lagged features for load (t-1, t-24 hours)
 print("  - Creating lagged features for load...")
@@ -245,9 +242,15 @@ print(f"  - Total measurements: {len(df_final)}")
 print("\nKey Statistics:")
 print(df_final[['load', 'Energy', 'TXpower', 'Bandwidth']].describe())
 
+# Show ESMode statistics if available
 print("\nEnergy Saving Mode Statistics:")
-if 'EnergySavingMode' in df_final.columns:
-    print(df_final['EnergySavingMode'].describe())
+esmode_cols = [col for col in df_final.columns if col.startswith('ESMode')]
+if esmode_cols:
+    print(f"  Found {len(esmode_cols)} ESMode columns: {esmode_cols}")
+    for col in esmode_cols:
+        active_pct = 100 * (df_final[col] > 0).mean()
+        if active_pct > 0:
+            print(f"  - {col}: Active {active_pct:.2f}% of the time")
 
 print("\n" + "="*80)
 print("✓ Preprocessing complete!")
