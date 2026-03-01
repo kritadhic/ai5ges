@@ -1,0 +1,92 @@
+Objectives:
+1. Build a predictive model to estimate energy consumption of 4G/5G base stations.
+This is the foundational step. A robust predictive model is essential for proactive energy management.
+Data Sources for this Objective:
+	5G Network Energy Consumption Dataset 1 (Netop):
+	ECstat.csv (Energy Consumption): This is the primary target variable for the predictive model. It directly provides hourly energy consumption per base station (Energy).
+	CLstat.csv (Cell-Level Statistics):
+	Load: This is a crucial predictor. Cell load directly impacts energy consumption.
+	EnergySavingMode: While an output of current mechanisms, it can also be a feature to understand its historical impact on energy.
+	BSinfo.csv (Base Station Basic Information): These static attributes can serve as important features for the model, as different hardware types or configurations will have different energy profiles.
+	RUType, Mode, Bandwidth, Frequency, Antennas, TXpower.
+	Time-based features: From the Time field in CLstat.csv and ECstat.csv, we can extract features like:
+	Hour of the day (e.g., peak vs. off-peak hours)
+	Day of the week (e.g., weekday vs. weekend)
+	Seasonality (if the 8-day period allows for some inference, or if combined with longer-term data).
+
+	5G Network Energy Consumption Dataset 2 (FIB LAB, Tsinghua University):
+	Energy Consumption:
+	BBU energy: Energy consumption of the base station's baseband unit.
+	RRU energy: Energy consumption of the cell's remote radio unit.
+	These provide more granular energy consumption data, allowing for separate modeling of BBU and RRU energy, or their combined sum.
+	Predictor Variables:
+	PRB usage ratio: Directly indicates resource utilization, similar to Load in Netop.
+	Traffic volume: A direct measure of network activity.
+	# of users: Number of connected users, another key indicator of network demand.
+	Channel Shutdown time, Carrier Shutdown time, Deep sleep time: These indicate the historical application of energy-saving mechanisms and can be used as features to understand their impact on energy consumption.
+	Static Attributes:
+	Base station ID, Cell ID: Can be used to join with other data or as categorical features if unique characteristics are identified.
+	Time-based features: Timestamp allows for extraction of similar temporal features as with Netop.
+
+Modeling Approach:
+	Feature Engineering: Create new features from existing ones (e.g., time-of-day, day-of-week from timestamps; interaction terms between load and hardware specs).
+	Time Series Analysis: Since the data is time-series based, techniques like ARIMA, SARIMA, Prophet, or more advanced deep learning models (LSTMs, GRUs) can be considered.
+	Machine Learning Regression: Standard regression models like Linear Regression, Ridge, Lasso, Random Forest, Gradient Boosting (XGBoost, LightGBM), and Neural Networks can be applied. The temporal aspect needs careful handling (e.g., using lagged features, or splitting data appropriately for training/validation/testing).
+	Cross-validation: Use time-series cross-validation techniques to ensure the model generalizes well to future data.
+
+2. Identifies periods where network can be put in low power, automatically triggers cell switch off, identifies times where certain cells need to be switched back on
+This objective moves from prediction to prescriptive action. It requires using the predictive model's output to make real-time decisions.
+
+Leveraging the Predictive Model:
+	Future Load Prediction: The energy consumption model will inherently rely on predicting future load (PRB usage, traffic volume, number of users). So, a separate sub-model might be needed to predict these future traffic characteristics.
+	Thresholds and Rules: Based on the predicted energy consumption and predicted future load, define thresholds for:
+	Low Power Mode/Cell Switch-off: If predicted load for a cell falls below a certain threshold for a sustained period, and/or predicted energy savings from switching off exceed a cost-benefit analysis.
+	Switching Cells Back On: If predicted load for a cell (or its neighboring cells) is expected to exceed a certain threshold, indicating a need for more capacity, or if user experience metrics are predicted to degrade.
+	Optimization Algorithm: Develop an algorithm that considers:
+	Predicted Load: The primary input from the predictive model.
+	Neighboring Cell Load: To ensure seamless handover and coverage when a cell is switched off.
+	User Experience (QoS) Metrics: While not directly in the dataset, the # of users and Traffic volume can be proxies. The optimization needs to ensure that switching off cells doesn't lead to dropped calls, slow data speeds, or poor coverage.
+	Switching Costs: There might be a small energy cost or latency associated with switching cells on/off.
+	Hardware Constraints: Consider the RUType, Mode, Antennas, TXpower from BSinfo.csv as different hardware might have different low-power modes or shutdown capabilities.
+	EnergySavingMode (from Netop): Analyze how existing energy-saving modes work and their impact to refine the new strategy.
+	Shutdown Times (from FIB LAB): The Channel Shutdown time, Carrier Shutdown time, Deep sleep time fields can help understand the historical duration and frequency of low-power states, informing the design of the new policy.
+
+Implementation Considerations:
+	Real-time Inference: The predictive model needs to be able to make predictions quickly for future time steps.
+	Feedback Loop: The system should ideally learn from its decisions. If a cell is switched off and user complaints increase, the model/rules should be adjusted.
+	Simulation Environment: Before deploying in a live network, simulate the proposed energy-saving scheme using historical data to evaluate its effectiveness and potential impact on QoS.
+
+3. Optimize OPEX for the operators retaining good user experience
+This is the ultimate goal, combining the previous two objectives.
+
+Metrics for Optimization:
+	OPEX Reduction:
+	Directly measure the reduction in Energy consumed (from ECstat.csv or BBU energy + RRU energy from FIB LAB).
+	Translate energy savings into monetary savings using assumed energy costs.
+	User Experience (QoS) Metrics:
+	Traffic Volume & # of Users: Ensure that even with energy saving, these metrics are not significantly impacted negatively.
+	PRB Usage Ratio: Monitor the PRB usage of active cells. If it consistently hits very high levels after a neighboring cell is switched off, it might indicate capacity issues.
+	Implicit QoS: The problem statement implies that current mechanisms may result in deterioration of Energy Efficiency in the network because the future load is not considered. The proposed solution should prevent this deterioration and ideally improve overall network efficiency without sacrificing user experience.
+	No direct QoS metrics are provided in the datasets. This means proxies must be used, or assumptions made. For example, if predicted traffic volume cannot be served by the remaining active cells, that's a proxy for degraded user experience.
+
+Optimization Strategy:
+	Multi-objective Optimization: The system needs to balance two often conflicting objectives: minimizing energy consumption and maximizing (or maintaining) user experience.
+	Cost Function: Develop a cost function that penalizes high energy consumption and heavily penalizes degradation in user experience.
+
+	Cost=a×EnergyConsumption+ß×UserExperiencePenalty
+	where a and ß are weights to prioritize one objective over the other. ß would likely be significantly higher to emphasize user experience.
+	Dynamic Adaptation: The optimization parameters (e.g., thresholds for switching cells) might need to adapt over time based on network conditions, observed traffic patterns, and operator policies.
+
+Overall Workflow:
+	Data Preprocessing: Clean, transform, and merge the datasets. Handle missing values, normalize data.
+	Feature Engineering: Create relevant features (time-based, aggregate statistics, interaction terms).
+	Traffic Prediction Model: Train a model to predict future Load, PRB usage ratio, Traffic volume, and # of users for each cell/base station. This is critical for proactive decision-making.
+	Energy Consumption Prediction Model: Train a model to predict Energy based on current and predicted future traffic, as well as static base station attributes and operational modes.
+	Decision Engine (Optimization Algorithm):
+	Takes predicted traffic and energy consumption as input.
+	Considers current network state (active cells, load on neighbors).
+	Applies a set of rules and an optimization objective function (balancing OPEX and QoS).
+	Outputs commands: "Switch off Cell A," "Switch on Cell B."
+	Evaluation:
+	Energy Savings: Quantify the reduction in energy consumption compared to the current mechanism.
+	QoS Impact: Monitor the predicted or simulated impact on traffic volume, number of users, and PRB utilization to ensure user experience is maintained.

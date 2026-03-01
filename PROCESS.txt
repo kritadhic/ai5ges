@@ -1,0 +1,106 @@
+Phase 1: Data Acquisition & Preprocessing
+Goal: Prepare the data for analysis and modeling.
+	Download and Load Data:
+	Obtain BSinfo.csv, CLstat.csv, ECstat.csv from Netop Dataset 1.
+	Obtain the relevant CSV files from FIB LAB Dataset 2 (weekday and weekend traces).
+	Load all CSV files into appropriate data structures (e.g., Pandas DataFrames in Python).
+	Initial Data Inspection:
+	Examine data types, check for missing values (.info(), .isnull().sum()).
+	Understand the range and distribution of key variables (.describe()).
+	Check for inconsistencies (e.g., negative energy values, unrealistic load percentages).
+	Data Cleaning:
+	Handle Missing Values:
+	For numerical columns, consider imputation (mean, median, forward/backward fill) or removal, depending on the extent and nature of missingness.
+	For categorical columns, consider imputation with mode or a 'Unknown' category.
+	Correct Data Types: Ensure Time/Timestamp columns are datetime objects.
+	Standardize Naming: If necessary, unify BS and CellName/Cell ID columns across datasets for easier merging.
+	Outlier Detection and Treatment: Identify and decide how to handle outliers in energy consumption, load, traffic, etc. (e.g., capping, transformation, removal).
+	Feature Engineering (Initial):
+	Time-based Features:
+	From Time/Timestamp: Extract hour_of_day, day_of_week (weekday/weekend flag), day_of_month, month, year. This is crucial for capturing temporal patterns.
+	Consider is_peak_hour (e.g., 8 AM - 10 AM, 5 PM - 7 PM), is_night_time.
+	Combine Energy Metrics (FIB LAB): If modeling total energy, sum BBU energy and RRU energy.
+	Ratio/Rate Features:
+	From FIB LAB: Traffic volume per PRB usage ratio or per # of users might be insightful.
+	Lagged Features: For time-series modeling, create lagged versions of Load, Traffic volume, # of users, and Energy (e.g., load at t-1 hour, t-24 hours).
+	Data Merging/Joining:
+	Netop: Join CLstat.csv and ECstat.csv on Time and BS. Then join with BSinfo.csv on BS and CellName. This will create a comprehensive hourly dataset per cell/BS.
+	FIB LAB: This dataset seems more self-contained per record, but ensure all relevant fields are present.
+	Cross-Dataset Integration (Optional but Recommended): If possible and meaningful, consider how to integrate insights or even features from both datasets, especially if they represent different aspects or granularities of similar networks. Given the different granularities (RRU/AAU vs. 4G/5G base stations) and measurement periods, this might be challenging but could involve transfer learning or using one dataset to validate assumptions made on the other. For a first pass, it's often easier to treat them somewhat separately or use FIB LAB for 4G/5G specific modeling and Netop for 5G-only.
+
+Phase 2: Predictive Modeling (Energy Consumption & Traffic)
+Goal: Build accurate models to forecast network conditions and energy usage.
+	Define Target Variables:
+	Energy Consumption: Energy (Netop), BBU energy, RRU energy (FIB LAB), or combined total energy.
+	Traffic/Load: Load (Netop), PRB usage ratio, Traffic volume, # of users (FIB LAB).
+	Select Features:
+	Static Features: RUType, Mode, Bandwidth, Frequency, Antennas, TXpower (Netop).
+	Dynamic Features: hour_of_day, day_of_week, is_peak_hour, EnergySavingMode (Netop), Channel Shutdown time, Carrier Shutdown time, Deep sleep time (FIB LAB), and lagged values of load/traffic/energy.
+	Model Selection & Training Strategy:
+	Time Series Split: Crucially, split data chronologically for training, validation, and testing (e.g., first 70% for training, next 15% for validation, last 15% for testing). Do not use random splits.
+	Traffic Prediction Models (e.g., for Load, PRB usage ratio, Traffic volume, # of users):
+	Baseline Models: ARIMA/SARIMA, Exponential Smoothing.
+	Machine Learning Models: Random Forest, Gradient Boosting (XGBoost, LightGBM), Ridge Regression.
+	Deep Learning Models (if data volume allows): LSTMs, GRUs.
+	Train these models to predict traffic for future hours (e.g., 1-hour, 3-hour, 6-hour ahead).
+	Energy Consumption Prediction Models:
+	Use similar model types as for traffic prediction.
+	Input features will include static BS/cell info, current and predicted future traffic/load, time-based features, and potentially historical energy-saving mode activations.
+	Train these models to predict energy consumption for future hours.
+	Model Evaluation:
+	Metrics: RMSE, MAE, R-squared for regression tasks.
+	Visualize: Plot actual vs. predicted values over time, especially for the test set, to identify systematic errors.
+	Per-BS/Per-Cell Evaluation: Evaluate models on individual base stations/cells to identify if some are harder to predict.
+
+Phase 3: Decision Engine & Optimization
+Goal: Translate predictions into actionable energy-saving strategies while preserving user experience.
+	Define User Experience (UX) Proxies:
+	Since direct QoS metrics are not available, use proxies:
+	PRB usage ratio (should not exceed a threshold, e.g., 80-90% on active cells).
+	# of users (ensure sufficient capacity for predicted users).
+	Traffic volume (ensure bandwidth for predicted traffic).
+	Avoid abrupt drops in service for connected users.
+	Develop Energy Saving Heuristics/Rules:
+	Cell Shutdown/Low Power Trigger:
+	IF predicted Load (or PRB usage ratio, Traffic volume, # of users) for Cell X for the next N hours is below a low threshold (e.g., 10-15%), AND
+	IF neighboring cells can absorb the predicted load without exceeding their UX thresholds, AND
+	IF the predicted energy savings from shutting down Cell X exceed a minimum threshold.
+	THEN recommend "Switch off Cell X."
+	Cell Wake-up Trigger:
+	IF predicted Load (or PRB usage ratio, Traffic volume, # of users) for Cell X (if off) or its neighboring cells (if absorbing load) for the next M hours is above a high threshold (e.g., 60-70%), AND
+	IF activating Cell X would alleviate congestion and improve UX.
+	THEN recommend "Switch on Cell X."
+	Consider "Warm-up" Time: Account for the time it takes for a cell to power on and become operational.
+	Optimization Algorithm (Conceptual):
+	At each decision point (e.g., hourly), for each base station/cell:
+	Get predicted_load and predicted_energy_consumption for the next 1-N hours.
+	Evaluate potential actions:
+	Keep current state (on/off).
+	Switch off (if currently on).
+	Switch on (if currently off).
+	Calculate the "cost" of each action:
+		Cost=a×(PredictedEnergyConsumptionForNextN_Hours)+ß×(PenaltyForUXDegradation)
+	PenaltyForUXDegradation would be 0 if UX thresholds are met, and a large positive number if they are violated.
+	Choose the action that minimizes the Cost.
+	Constraints: Ensure that a minimum number of cells are active for basic coverage, avoid frequent toggling (hysteresis).
+	Simulation & Evaluation of the Decision Engine:
+	Backtest: Apply the decision engine to the historical test data.
+	Metrics:
+	OPEX Reduction: Calculate the difference in total energy consumption with the proposed system vs. a baseline (e.g., all cells always on, or current OAM mechanism).
+	UX Impact: Monitor how often PRB usage ratio exceeds thresholds, or how many "users" would have been negatively impacted. This requires careful definition of what "negative impact" means given the available data.
+	Switching Frequency: Analyze how often cells are switched on/off.
+
+Phase 4: Refinement & Deployment Considerations
+Goal: Improve the system and plan for real-world application.
+	Iterative Refinement:
+	Based on simulation results, refine the predictive models (feature engineering, hyperparameter tuning).
+	Adjust the energy-saving heuristics and optimization algorithm parameters (a, ß, thresholds) to achieve the desired balance between energy savings and UX.
+	Explore more sophisticated optimization techniques (e.g., Reinforcement Learning for dynamic policy generation) if the rule-based system is insufficient.
+	Scalability:
+	Consider how the models and decision engine would perform with thousands of base stations in real-time.
+	Optimize code for performance.
+	Real-world Integration:
+	Data Ingestion: How would real-time data from the network be fed into the system?
+	Action Execution: How would the "Switch on/off" commands be sent to the network OAM system?
+	Monitoring & Feedback: Implement dashboards to monitor energy savings, network load, and any potential UX issues. Establish a feedback loop to continuously improve the models and rules.
+	Documentation: Document the models, algorithms, assumptions, and evaluation results thoroughly.

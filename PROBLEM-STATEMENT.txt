@@ -1,0 +1,19 @@
+PROBLEM STATEMENT                                                                                        
+
+  1.Energy cost is one of the largest operating expenses (OPEX) for telecom operators                      
+                                                                                                           
+  2.Cell-level energy-saving schemes are typically applied for maximum gain                                
+                                                                                                           
+  3.The current cell-level energy-saving mechanism
+
+  •The Operations & Maintenance (OAM) detects a lowly loaded cell (in terms of PRB usage and the       
+  number of connected users) and shuts it down
+
+  •The operator may do it manually or set a timer for periodic shutdown
+
+  4.Drawbacks of the current mechanism:
+
+  •It relies on the current traffic load without considering future traffic load or other factors      
+
+  •May result in deterioration of Energy Efficiency in the network because the future load is not      
+  considered
