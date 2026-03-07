@@ -8,15 +8,17 @@
 
 ## Executive Summary
 
-Three experiments were conducted to measure the value of feature engineering for energy consumption prediction. All experiments used proper temporal train-test split (80/20) with TimeSeriesSplit cross-validation to respect the time series nature of the data.
+Four experiments were completed to measure the value of feature engineering and hyperparameter optimization for energy consumption prediction. All experiments used proper temporal train-test split (80/20) with TimeSeriesSplit cross-validation to respect the time series nature of the data.
 
 ### Key Findings
 
 1. **Baseline features are strong** - Raw operational features (load, hardware config) achieve R² = 0.88
 2. **Time features add moderate value** - 6% MAE improvement over baseline
 3. **Load lag features add NO value** - No improvement over time features
-4. **Total improvement: 5.97%** - Below 10-25% target, but data leakage was prevented
-5. **Best production model: Time Features (Experiment 2)** - Simplest model with best performance
+4. **Hyperparameter tuning yields minimal gains** - Only 0.87% additional improvement
+5. **Total improvement: 6.87%** - Below 10-25% target, but data leakage was prevented
+6. **Feature set is the limiting factor** - Not model configuration or hyperparameters
+7. **Best production model: Time Features (Experiment 2)** - Simplest model with comparable performance (only 0.87% behind tuned version)
 
 ---
 
@@ -296,13 +298,13 @@ Further improvements must come from:
 ### 3. Understanding Why Performance is Below Target
 
 **Expected:** 10-25% MAE improvement
-**Achieved:** 6% MAE improvement
+**Achieved:** 6.87% MAE improvement (with hyperparameter tuning)
 
 **Reasons:**
 1. **Strong baseline features**
    - Current load is highly predictive of current energy
    - Hardware configuration (Antennas, Frequency) captures the rest
-   - Little room for improvement from temporal features
+   - Little room for improvement from temporal features or hyperparameter tuning
 
 2. **Linear energy-load relationship**
    - Energy consumption scales predictably with load
@@ -312,7 +314,11 @@ Further improvements must come from:
    - Correctly excluding energy lags prevents cheating
    - Real production performance is captured accurately
 
-**Conclusion:** The 6% improvement is realistic and production-ready, even if below initial expectations.
+4. **Near-optimal default hyperparameters**
+   - Hyperparameter tuning added only 0.87% improvement
+   - Indicates feature set, not model configuration, is the limiting factor
+
+**Conclusion:** The 6.87% improvement is realistic and production-ready, even if below initial expectations. Further gains must come from segmentation (Experiment 6) or alternative approaches.
 
 ---
 
@@ -334,9 +340,26 @@ Further improvements must come from:
    - Model: LightGBM with 18 features
    - Output: Energy prediction (W)
 
-### Future Investigations (Optional)
+### Active Investigations
 
-If further improvement is desired:
+**Current Focus:**
+
+1. **🔵 Cell/BS-Specific Models (Experiment 6 - IN PROGRESS)**
+   - Strong evidence: 54% performance gap on Cell1, CV=0.80 for BS variance
+   - Expected improvement: 3-12% MAE reduction
+   - 4 segmentation strategies planned (cell-specific, BS clustering, hierarchical, mixed effects)
+   - See "Experiment 6" section for detailed design
+
+**Skipped:**
+
+2. **⏭️ Ensemble Methods (Experiment 5 - SKIPPED)**
+   - Rationale: Hyperparameter tuning showed < 1% gain, indicating feature set limitation
+   - Ensemble unlikely to provide significant improvement
+   - Segmentation addresses different optimization dimension
+
+### Future Investigations (Post Experiment 6)
+
+If Experiment 6 doesn't achieve 10% target improvement:
 
 1. **Try non-linear time features**
    - Cyclical encoding (sin/cos) for hour and day
@@ -346,13 +369,10 @@ If further improvement is desired:
    - Temperature affects cooling requirements
    - May explain additional variance
 
-3. **Cell-specific models**
-   - Different cells may have different energy patterns
-   - Train separate models per cell or cell cluster
-
-4. **Ensemble methods**
-   - Combine multiple models for marginal gains
-   - May push closer to 10% improvement target
+3. **Deep learning models**
+   - LSTM/GRU for temporal patterns
+   - Attention mechanisms
+   - Graph neural networks for BS relationships
 
 ---
 
@@ -465,223 +485,34 @@ Hyperparameter tuning provided minimal improvement (0.87%), indicating that:
 
 ---
 
-## Next Phase: Advanced ML Experiments
+## Planned Experiments: Remaining Work
 
-While the current Time Features model meets success criteria (R² = 0.89, MAE = 3.14 W), the 6% improvement is below the 10-25% target. Three additional experiments are planned to maximize traditional ML performance before considering deep learning models.
+While Experiment 4 (Hyperparameter Tuning) has been completed with minimal gains (0.87%), two additional experiments remain to maximize traditional ML performance before considering deep learning models.
 
-### Experiment 4: Hyperparameter Tuning
-### Experiment 5: Ensemble Methods
-### Experiment 6: Cell/BS-Specific Models
-
----
-
-## Experiment 4: Hyperparameter Tuning
-
-**Objective:** Optimize hyperparameters for LightGBM and XGBoost to extract maximum performance from existing features.
-
-**Notebook:** `scripts/traditional_ml_time_ht.ipynb` (ht = hyperparameter tuning)
-
-**Expected Improvement:** 1-3% MAE reduction over Time Features baseline (bringing total to 8-10% over Experiment 1)
-
-### Rationale
-
-Current experiments use default hyperparameters with NO tuning:
-```python
-LGBMRegressor(
-    n_estimators=100,      # Default
-    max_depth=6,           # Default
-    learning_rate=0.1,     # Default
-    subsample=0.8,         # Default
-    colsample_bytree=0.8   # Default
-)
-```
-
-Gradient boosting models are highly sensitive to hyperparameters. Systematic optimization could yield 1-3% additional improvement.
-
-### Design Specifications
-
-#### 4.1 Data Source
-- **Input:** `processed_data/netop_ml_time.csv` (same as Experiment 2)
-- **Features:** 13 raw + 5 time = 18 features
-- **Train-Test Split:** Temporal 80/20 (consistent with Experiments 1-3)
-
-#### 4.2 Models to Tune
-
-**Priority 1: LightGBM** (current best performer, Test R² = 0.8942)
-
-**Priority 2: XGBoost** (close second, Test R² = 0.8916)
-
-Do NOT tune Random Forest or Linear Regression (already underperforming).
-
-#### 4.3 Hyperparameter Search Space
-
-**LightGBM Search Space:**
-```python
-lgbm_param_grid = {
-    'regressor__n_estimators': [100, 200, 300, 500],
-    'regressor__max_depth': [4, 6, 8, 10, -1],
-    'regressor__learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
-    'regressor__num_leaves': [31, 50, 70, 100, 127],
-    'regressor__min_child_samples': [5, 10, 20, 30, 50],
-    'regressor__subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
-    'regressor__colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
-    'regressor__reg_alpha': [0, 0.01, 0.1, 0.5, 1.0],      # L1 regularization
-    'regressor__reg_lambda': [0, 0.01, 0.1, 0.5, 1.0]      # L2 regularization
-}
-```
-
-**XGBoost Search Space:**
-```python
-xgb_param_grid = {
-    'regressor__n_estimators': [100, 200, 300, 500],
-    'regressor__max_depth': [3, 4, 6, 8, 10],
-    'regressor__learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
-    'regressor__min_child_weight': [1, 3, 5, 7, 10],
-    'regressor__gamma': [0, 0.1, 0.2, 0.3, 0.5],
-    'regressor__subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
-    'regressor__colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
-    'regressor__reg_alpha': [0, 0.01, 0.1, 0.5, 1.0],
-    'regressor__reg_lambda': [0, 0.01, 0.1, 0.5, 1.0]
-}
-```
-
-#### 4.4 Tuning Method
-
-**Use Optuna** (preferred) for Bayesian optimization:
-
-```python
-import optuna
-from optuna.integration import OptunaSearchCV
-
-# Define objective function
-def objective(trial):
-    params = {
-        'n_estimators': trial.suggest_int('n_estimators', 100, 500, step=100),
-        'max_depth': trial.suggest_int('max_depth', 4, 10),
-        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-        'num_leaves': trial.suggest_int('num_leaves', 31, 127),
-        'min_child_samples': trial.suggest_int('min_child_samples', 5, 50),
-        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-        'reg_alpha': trial.suggest_float('reg_alpha', 0, 1.0),
-        'reg_lambda': trial.suggest_float('reg_lambda', 0, 1.0),
-        'random_state': 42,
-        'n_jobs': -1,
-        'verbose': -1
-    }
-
-    model = Pipeline([
-        ('preprocessor', preprocessor_time),
-        ('regressor', LGBMRegressor(**params))
-    ])
-
-    # Use TimeSeriesSplit for cross-validation
-    tscv = TimeSeriesSplit(n_splits=5)
-    scores = cross_val_score(model, X_train_full, y_train_full,
-                             cv=tscv, scoring='neg_mean_absolute_error',
-                             n_jobs=1)
-
-    return -scores.mean()  # Optuna minimizes
-
-# Run optimization
-study = optuna.create_study(direction='minimize', study_name='lightgbm_tuning')
-study.optimize(objective, n_trials=100, show_progress_bar=True)
-
-# Get best parameters
-best_params = study.best_params
-```
-
-**Alternative: RandomizedSearchCV** (if Optuna not available):
-
-```python
-from sklearn.model_selection import RandomizedSearchCV
-
-random_search = RandomizedSearchCV(
-    estimator=lgbm_pipeline,
-    param_distributions=lgbm_param_grid,
-    n_iter=100,                              # 100 random combinations
-    scoring='neg_mean_absolute_error',
-    cv=TimeSeriesSplit(n_splits=5),
-    verbose=2,
-    random_state=42,
-    n_jobs=-1
-)
-
-random_search.fit(X_train_full, y_train_full)
-best_params = random_search.best_params_
-```
-
-#### 4.5 Evaluation Protocol
-
-1. **Cross-Validation:** TimeSeriesSplit with 5 folds on training set (80% of data)
-2. **Metric:** MAE (primary), R², RMSE, MAPE (secondary)
-3. **Test Set Evaluation:** Evaluate best model on held-out test set (20%)
-4. **Comparison:** Compare against Experiment 2 baseline (Time Features, no tuning)
-
-#### 4.6 Success Criteria
-
-- **Minimum:** 1% MAE improvement over Time Features baseline (3.14 W → 3.11 W)
-- **Target:** 2-3% MAE improvement (3.14 W → 3.05-3.08 W)
-- **Stretch:** 4-5% MAE improvement (3.14 W → 3.00-3.02 W)
-
-#### 4.7 Outputs
-
-**Results:**
-- `results/traditional_ml_time_ht_results.csv` - Test set results for tuned models
-
-**Models:**
-- `models/lightgbm_time_ht.pkl` - Best tuned LightGBM model
-- `models/xgboost_time_ht.pkl` - Best tuned XGBoost model
-
-**Tuning Reports:**
-- `results/lightgbm_tuning_history.csv` - Optuna trial history
-- `results/xgboost_tuning_history.csv` - Optuna trial history
-
-**Visualizations:**
-- Hyperparameter importance plot (Optuna)
-- Optimization history plot (convergence)
-- Parallel coordinate plot (parameter relationships)
-
-#### 4.8 Implementation Notes
-
-1. **Computational Cost:**
-   - 100 trials × 5 CV folds = 500 model fits per algorithm
-   - Estimated time: 2-4 hours on single machine
-   - Use `n_jobs=-1` for parallel processing
-
-2. **Early Stopping:**
-   - Use Optuna's pruning to skip unpromising trials
-   - Saves ~30-40% computation time
-
-3. **Baseline Comparison:**
-   - Always compare against Experiment 2 results
-   - Report both absolute and relative improvements
-
-4. **Parameter Analysis:**
-   - Identify which parameters have the most impact
-   - Document best parameter combinations
-   - Check for overfitting (CV vs Test performance gap)
+**Status:**
+- ✅ **Experiment 4 (Hyperparameter Tuning):** COMPLETE - Achieved 0.87% improvement, below 1% threshold
+- ⏭️ **Experiment 5 (Ensemble Methods):** SKIPPED - Per decision rules (Exp 4 < 1% improvement)
+- 🔵 **Experiment 6 (Cell/BS-Specific Models):** NEXT - Strong evidence supporting 3-12% improvement potential
 
 ---
 
-## Experiment 5: Ensemble Methods
+## Experiment 5: Ensemble Methods (SKIPPED)
 
-**Objective:** Combine multiple models to leverage their complementary strengths and reduce prediction variance.
+**Status:** ⏭️ SKIPPED per decision rules - Experiment 4 showed < 1% improvement threshold
 
-**Notebook:** `scripts/traditional_ml_time_ensemble.ipynb`
+**Rationale for Skipping:**
+- Experiment 4 (Hyperparameter Tuning) achieved only 0.87% improvement (below 1% threshold)
+- Default hyperparameters already near-optimal, indicating feature set is limiting factor
+- Ensemble methods unlikely to provide significant improvement if tuning didn't
+- Better to test segmentation approach (Experiment 6) which addresses a different dimension
+
+**Original Objective:** Combine multiple models to leverage their complementary strengths and reduce prediction variance.
+
+**Notebook:** `scripts/traditional_ml_time_ensemble.ipynb` (NOT IMPLEMENTED)
 
 **Expected Improvement:** 1-2% MAE reduction over best single model
 
-### Rationale
-
-Current best models have different strengths:
-- **LightGBM:** Best test R² (0.8942), fast training
-- **XGBoost:** Close second (0.8916), different regularization
-- **Random Forest:** Different algorithm class, captures different patterns
-
-Ensemble methods can combine these strengths to achieve better performance than any single model.
-
-### Design Specifications
+### Design Specifications (For Reference Only)
 
 #### 5.1 Input Selection
 
@@ -878,13 +709,20 @@ plt.show()
 
 ---
 
-## Experiment 6: Cell/BS-Specific Models
+## Experiment 6: Cell/BS-Specific Models (NEXT)
+
+**Status:** 🔵 NEXT - Ready for implementation with strong evidence supporting the approach
 
 **Objective:** Train specialized models for different cells or base station groups to capture location-specific energy patterns.
 
-**Notebook:** `scripts/traditional_ml_time_cell.ipynb`
+**Notebook:** `scripts/traditional_ml_time_cell.ipynb` (TO BE IMPLEMENTED)
 
-**Expected Improvement:** 2-5% MAE reduction over global model (varies by segment)
+**Expected Improvement (Evidence-Based):**
+- **Conservative:** 3-5% MAE reduction (expected test MAE: 2.98-3.05 W)
+- **Target:** 9-12% MAE reduction (expected test MAE: 2.76-2.86 W)
+- **Theoretical Maximum:** 36-42% MAE reduction (if all high-error BSs reach median level)
+
+**Evidence Strength:** ✅ STRONG (CV=0.80, 54% performance gap on Cell1, 204 high-error BSs)
 
 ### Rationale
 
@@ -894,6 +732,102 @@ Current model is GLOBAL - trained on all cells/base stations together. However:
 - Different usage patterns (residential vs commercial)
 
 Specialized models can capture these location-specific patterns.
+
+### Evidence for Segmentation Approach
+
+**Analysis Performed:** Before proceeding with Experiment 6, a comprehensive analysis was conducted to validate whether cell/BS-specific models would actually improve performance. This evidence-based approach prevents wasted effort on segmentation if the global model already performs uniformly well.
+
+#### Cell-Level Analysis
+
+**Pattern Differences:**
+
+| Metric | Cell0 (97.8%) | Cell1 (2.2%) | Difference |
+|--------|---------------|--------------|------------|
+| **Mean Energy** | 28.50 W | 34.89 W | +22% higher |
+| **Mean Load** | 0.258 | 0.128 | -50% lower |
+| **Energy-Load Correlation** | 0.67 | 0.30 | -55% weaker |
+| **Hardware Configs** | 7 RUTypes, 3 Antenna configs | 3 RUTypes, 1 Antenna config | Different profiles |
+
+**Statistical Significance:** T-test comparing Cell0 vs Cell1 energy distributions: t=-18.07, **p < 0.001** (highly significant difference)
+
+**The Paradox:** Cell1 has **lower load** but **higher energy**, with much weaker load-energy correlation. This indicates fundamentally different energy consumption characteristics that the global model cannot capture.
+
+#### Performance Gap Analysis
+
+**Current Model Performance by Cell:**
+
+| Cell | MAE | R² | Mean Error | Status |
+|------|-----|-----|------------|--------|
+| **Overall** | 2.75 W | 0.919 | - | Global model |
+| **Cell0** | 2.72 W | 0.923 | +0.06 W | Good fit |
+| **Cell1** | **4.19 W** | **0.635** | **+4.00 W** | ❌ **54% worse MAE** |
+
+**Key Finding:** The global model has a **systematic +4W underprediction bias** on Cell1, with R² degrading from 0.92 to 0.63. This is because:
+1. Cell1 represents only 2.2% of training data
+2. The model learned Cell0's pattern (load-dominant)
+3. Cell1's weak load correlation (0.30) breaks this assumption
+4. Result: Consistent underprediction for Cell1 samples
+
+#### Base Station Variance Analysis
+
+**BS-Level Performance Statistics:**
+
+| Statistic | Value | Interpretation |
+|-----------|-------|----------------|
+| **Mean BS MAE** | 2.72 W | Average across 816 BSs |
+| **Std of BS MAE** | 2.18 W | High variance |
+| **Coefficient of Variation** | **0.80** | ✓ **Very high (>0.2 threshold)** |
+| **Min BS MAE** | 0.19 W | Best BS (B_423) |
+| **Max BS MAE** | 18.20 W | Worst BS (B_745) |
+| **Range** | 18.0 W | **100× difference!** |
+
+**High-Error Base Stations:**
+- **Top 25% worst BSs:** 204 BSs with average MAE = 5.76 W
+- **Sample coverage:** 18,084 samples (24.9% of dataset)
+- **Contribution to error:** 1.46 W of total 2.75 W MAE
+
+**Top 10 Worst BSs:** B_745 (18.2W), B_105 (18.2W), B_85 (15.1W), B_382 (14.3W), B_97 (12.2W), B_728 (10.4W), B_223 (10.2W), B_43 (9.2W), B_471 (9.0W), B_499 (9.0W)
+
+**Top 10 Best BSs:** B_423 (0.19W), B_679 (0.23W), B_424 (0.23W), B_495 (0.26W), B_800 (0.26W)
+
+#### Improvement Potential Analysis
+
+**Scenario 1: Cell-Specific Models (Conservative)**
+- Improve Cell1 performance to Cell0 level (4.19 → 2.72 W)
+- **Expected improvement:** 1.17%
+- **Expected test MAE:** 3.10 W (down from 3.14 W)
+- ✓ Meets 1% minimum threshold
+
+**Scenario 2: BS Clustering - Conservative (Top 25% worst BSs)**
+- Bring 204 worst BSs (MAE 5.76W) to median level (1.90W)
+- **Expected improvement:** 9-12%
+- **Expected test MAE:** 2.76-2.86 W
+- ✓ ✓ Significantly exceeds 3% target, approaches 10% minimum success
+
+**Scenario 3: BS Clustering - Aggressive (Top 50% worst BSs)**
+- Improve 408 BSs (50% of all BSs) to median level
+- **Theoretical maximum improvement:** 36-42%
+- **Expected test MAE:** 1.83-2.01 W
+- ✓ ✓ ✓ Would exceed 10% minimum success criteria
+
+**Realistic Expectation:**
+- Capture 25-33% of theoretical maximum
+- Achieve **3-5% actual improvement** (conservative estimate)
+- Expected test MAE: **2.98-3.05 W**
+
+#### Conclusion from Evidence
+
+**✅ STRONG EVIDENCE for proceeding with Experiment 6:**
+
+1. **Cell-level:** Statistically significant differences (p<0.001), 54% performance gap
+2. **BS-level:** Massive variance (CV=0.80), 100× error range between best/worst BSs
+3. **Systematic errors:** 204 high-error BSs contribute 53% of total error
+4. **Improvement potential:** 9-42% theoretical, 3-5% realistic
+5. **Threshold validation:** Even conservative estimates exceed 1% minimum
+
+**Key Insight:** The global model performs excellently on Cell0/low-error BSs but catastrophically on Cell1/high-error BSs. Segmentation directly addresses this heterogeneity.
+
+**Strategy:** Prioritize BS clustering over cell-only models, as BS-level variance (CV=0.80) offers larger improvement potential than cell-level differences alone.
 
 ### Dataset Analysis
 
@@ -908,24 +842,34 @@ From `processed_data/netop_ml_time.csv`:
 - 70-212 samples per BS (mean: 89, median: 87)
 - All BSs have ≥ 70 samples (sufficient for modeling)
 
+**Performance Variance:**
+- CV of BS-level MAE: 0.80 (very high)
+- 204 BSs (25%) have MAE > 4.9 W
+- Error range: 0.19 W to 18.2 W (100× difference)
+
 ### Design Specifications
 
 #### 6.1 Input Selection
 
-**Base this experiment on the BEST performing model from:**
-1. ✅ **Option A:** Experiment 5 (Ensemble) - if improvement > 0.5%
-2. ✅ **Option B:** Experiment 4 (Hyperparameter Tuning) - if Experiment 5 fails
-3. ⚠️ **Option C:** Experiment 2 (Time Features) - fallback
+**Baseline Model:** Experiment 2 (Time Features) - Default LightGBM
+- **Rationale:**
+  - Experiment 5 (Ensemble) was skipped per decision rules
+  - Experiment 4 (Hyperparameter Tuning) achieved only 0.87% improvement
+  - Simplicity is preferred when improvement is marginal
+  - Exp 2 model: MAE = 3.14 W, R² = 0.8942
 
-**Decision Rule:**
+**Decision Made (per roadmap):**
 ```python
-if MAE_exp5 < best_previous_MAE * 0.995:  # 0.5% improvement
-    base_model = exp5_best_model
-elif MAE_exp4 < MAE_exp2 * 0.99:  # 1% improvement
-    base_model = exp4_best_model
-else:
-    base_model = exp2_model
+# Exp 4 improvement was 0.87% < 1% threshold
+# Therefore: Skip Exp 5, use Exp 2 default model for Exp 6
+base_model = lightgbm_time.pkl  # Experiment 2
+baseline_test_mae = 3.14  # W
 ```
+
+**Why not use Exp 4 tuned model?**
+- Minimal gain (0.87%) doesn't justify added complexity
+- If segmentation works, hyperparameter tuning can be applied afterward
+- Start with simpler baseline to isolate segmentation benefit
 
 #### 6.2 Segmentation Strategies
 
@@ -1300,16 +1244,24 @@ Experiment 2 (✅ COMPLETE)
 
 ## Current Status
 
-**Experiments Completed:** 4 of 6 planned (Experiments 1-4)
+**Experiments Status:**
+- ✅ **Completed:** Experiments 1-4 (Baseline, Time Features, Full Features, Hyperparameter Tuning)
+- ⏭️ **Skipped:** Experiment 5 (Ensemble Methods) - per decision rules
+- 🔵 **Next:** Experiment 6 (Cell/BS-Specific Models) - strong evidence for 3-12% improvement
 
 **Best Model So Far:**
 - **Option A (Recommended):** Experiment 2 default LightGBM (MAE = 3.14 W, R² = 0.8942)
-- **Option B:** Experiment 4 tuned LightGBM (MAE = 3.11 W, R² = 0.8982)
+  - Simplest model, easiest to maintain
+  - Meets all success criteria
+- **Option B (Marginal Gain):** Experiment 4 tuned LightGBM (MAE = 3.11 W, R² = 0.8982)
+  - 0.87% better performance
+  - Added complexity for minimal gain
 
-**Key Learning from Experiment 4:**
-- Feature set is the limiting factor, not model hyperparameters
-- Default hyperparameters are already near-optimal
-- Need segmentation or deep learning for further improvement
+**Key Insights:**
+1. **Feature set is the limiting factor** - Not model hyperparameters
+2. **Default hyperparameters are already near-optimal** - Tuning yielded only 0.87% gain
+3. **Segmentation shows promise** - Cell1 has 54% worse performance, 204 high-error BSs identified
+4. **Next step is critical** - Need 3% improvement from Experiment 6 to reach 10% target
 
 **Next Action:** Implement Experiment 6 (Cell/BS-Specific Models) to test segmentation approach.
 
