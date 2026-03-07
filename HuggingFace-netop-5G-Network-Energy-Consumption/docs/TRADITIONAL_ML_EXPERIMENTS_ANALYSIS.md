@@ -344,11 +344,14 @@ Further improvements must come from:
 
 **Current Focus:**
 
-1. **🔵 Cell/BS-Specific Models (Experiment 6 - IN PROGRESS)**
+1. **🔵 Segmented Models (Experiment 6 - READY FOR IMPLEMENTATION)**
    - Strong evidence: 54% performance gap on Cell1, CV=0.80 for BS variance
    - Expected improvement: 3-12% MAE reduction
-   - 4 segmentation strategies planned (cell-specific, BS clustering, hierarchical, mixed effects)
-   - See "Experiment 6" section for detailed design
+   - Two segmentation dimensions:
+     - **Cell-level:** 2 cells (Cell0 vs Cell1)
+     - **BS-level:** 816 base stations clustered into k groups (k=3, 5, 7)
+   - 7 strategies planned: cell-specific (2 models), BS clustering (3 variants), hierarchical, mixed effects
+   - See "Experiment 6: Segmented Models" section for detailed design
 
 **Skipped:**
 
@@ -492,7 +495,7 @@ While Experiment 4 (Hyperparameter Tuning) has been completed with minimal gains
 **Status:**
 - ✅ **Experiment 4 (Hyperparameter Tuning):** COMPLETE - Achieved 0.87% improvement, below 1% threshold
 - ⏭️ **Experiment 5 (Ensemble Methods):** SKIPPED - Per decision rules (Exp 4 < 1% improvement)
-- 🔵 **Experiment 6 (Cell/BS-Specific Models):** NEXT - Strong evidence supporting 3-12% improvement potential
+- 🔵 **Experiment 6 (Segmented Models):** NEXT - Strong evidence supporting 3-12% improvement potential
 
 ---
 
@@ -709,13 +712,19 @@ plt.show()
 
 ---
 
-## Experiment 6: Cell/BS-Specific Models (NEXT)
+## Experiment 6: Segmented Models (NEXT)
 
 **Status:** 🔵 NEXT - Ready for implementation with strong evidence supporting the approach
 
-**Objective:** Train specialized models for different cells or base station groups to capture location-specific energy patterns.
+**Objective:** Train specialized models for different network segments to capture location-specific and configuration-specific energy patterns.
 
 **Notebook:** `scripts/traditional_ml_time_cell.ipynb` (TO BE IMPLEMENTED)
+
+**Segmentation Approach:** The dataset has two orthogonal dimensions for segmentation:
+1. **Cell-level (2 cells):** Cell0 (97.8% of data) vs Cell1 (2.2% of data, 54% worse performance)
+2. **Base Station-level (816 BSs):** Cluster similar BSs into k homogeneous groups (k=3, 5, or 7)
+
+**Strategies to Test:** 7 approaches ranging from simple (2 cell-specific models) to complex (hierarchical with fallbacks)
 
 **Expected Improvement (Evidence-Based):**
 - **Conservative:** 3-5% MAE reduction (expected test MAE: 2.98-3.05 W)
@@ -726,12 +735,19 @@ plt.show()
 
 ### Rationale
 
-Current model is GLOBAL - trained on all cells/base stations together. However:
-- Different cells may have different hardware configurations
-- Different base stations may serve different geographical areas (urban vs rural)
-- Different usage patterns (residential vs commercial)
+The current global model is trained on all network elements together (2 cells × 816 base stations). However, evidence shows significant heterogeneity:
 
-Specialized models can capture these location-specific patterns.
+**Cell-Level Heterogeneity:**
+- Only 2 cells in the dataset (Cell0: 97.8%, Cell1: 2.2%)
+- Cell1 has 54% worse performance (MAE 4.19W vs 2.72W)
+- Fundamentally different energy-load relationships (correlation: 0.67 vs 0.30)
+
+**Base Station Heterogeneity:**
+- 816 unique base stations with massive performance variance (CV=0.80)
+- Error range: 0.19W to 18.2W (100× difference!)
+- Top 25% worst BSs (204 stations) contribute 53% of total error
+
+Specialized models can capture these segment-specific patterns that the global model misses.
 
 ### Evidence for Segmentation Approach
 
@@ -829,23 +845,30 @@ Specialized models can capture these location-specific patterns.
 
 **Strategy:** Prioritize BS clustering over cell-only models, as BS-level variance (CV=0.80) offers larger improvement potential than cell-level differences alone.
 
-### Dataset Analysis
+### Dataset Structure and Segmentation Dimensions
 
-From `processed_data/netop_ml_time.csv`:
+From `processed_data/netop_ml_time.csv` - 72,569 total samples:
 
-**Cell Distribution:**
-- Cell0: 70,989 samples (97.8%)
-- Cell1: 1,580 samples (2.2%)
+**Dimension 1: Cell-Level (2 cells)**
+- **Cell0:** 70,989 samples (97.8%) - Dominant cell with good model performance
+- **Cell1:** 1,580 samples (2.2%) - Minority cell with 54% worse performance
 
-**Base Station Distribution:**
-- 816 unique base stations
-- 70-212 samples per BS (mean: 89, median: 87)
-- All BSs have ≥ 70 samples (sufficient for modeling)
+**Dimension 2: Base Station-Level (816 base stations)**
+- **Total BSs:** 816 unique stations distributed across 2 cells
+- **Samples per BS:** 70-212 samples (mean: 89, median: 87)
+- **Data sufficiency:** All BSs have ≥ 70 samples (adequate for training)
 
-**Performance Variance:**
-- CV of BS-level MAE: 0.80 (very high)
-- 204 BSs (25%) have MAE > 4.9 W
-- Error range: 0.19 W to 18.2 W (100× difference)
+**Performance Heterogeneity:**
+- **Cell-level gap:** Cell1 MAE (4.19W) is 54% worse than Cell0 (2.72W)
+- **BS-level variance:** CV = 0.80 (very high, threshold is 0.2)
+- **BS error range:** 0.19W to 18.2W (100× difference!)
+- **High-error BSs:** 204 BSs (25%) have MAE > 4.9W, contributing 53% of total error
+
+**Segmentation Strategy Rationale:**
+The dataset has two orthogonal dimensions for segmentation:
+1. **Cell-specific models (2 models):** Address the cell-level performance gap
+2. **BS clustering (k models):** Address BS-level heterogeneity by grouping similar stations
+3. **Hierarchical/Mixed:** Combine both dimensions for maximum flexibility
 
 ### Design Specifications
 
@@ -873,9 +896,11 @@ baseline_test_mae = 3.14  # W
 
 #### 6.2 Segmentation Strategies
 
-**Strategy 1: Cell-Specific Models (Simple)**
+The experiment will test four complementary segmentation approaches, progressing from simple to complex:
 
-Train separate models for each cell:
+**Strategy 1: Cell-Specific Models (2 models)**
+
+Train one model per cell (2 cells total):
 ```python
 # Cell0 model (97.8% of data)
 df_cell0 = df_time[df_time['CellName'] == 'Cell0']
@@ -892,9 +917,9 @@ else:
     prediction = model_cell1.predict(X_new)
 ```
 
-**Strategy 2: BS Clustering Models**
+**Strategy 2: BS Clustering Models (k models for 816 base stations)**
 
-Group similar base stations and train models per cluster:
+Cluster the 816 base stations into k homogeneous groups and train one model per cluster:
 ```python
 # Step 1: Extract BS features (aggregate statistics)
 bs_features = df_time.groupby('BS').agg({
@@ -914,11 +939,11 @@ X_bs = bs_features.drop('BS', axis=1)
 scaler = StandardScaler()
 X_bs_scaled = scaler.fit_transform(X_bs)
 
-# Try 3-10 clusters
-kmeans = KMeans(n_clusters=5, random_state=42)
+# Cluster 816 BSs into k groups (will test k=3, 5, 7)
+kmeans = KMeans(n_clusters=5, random_state=42)  # Example: k=5
 bs_clusters = kmeans.fit_predict(X_bs_scaled)
 
-bs_features['Cluster'] = bs_clusters
+bs_features['Cluster'] = bs_clusters  # Each BS assigned to one of k clusters
 
 # Step 3: Assign clusters to original data
 df_time_clustered = df_time.merge(
@@ -1036,15 +1061,22 @@ for cell in ['Cell0', 'Cell1']:
 
 #### 6.5 Comparison Matrix
 
-| Strategy | Overall MAE | Overall R² | Cell0 MAE | Cell1 MAE | Improvement |
-|----------|-------------|------------|-----------|-----------|-------------|
-| Global Model (baseline) | 3.14 W | 0.8942 | ? | ? | - |
-| Cell-Specific | ? | ? | ? | ? | ? |
-| BS Clustering (k=3) | ? | ? | ? | ? | ? |
-| BS Clustering (k=5) | ? | ? | ? | ? | ? |
-| BS Clustering (k=7) | ? | ? | ? | ? | ? |
-| Hierarchical | ? | ? | ? | ? | ? |
-| Mixed Effects | ? | ? | ? | ? | ? |
+**Evaluation Approach:**
+- **Overall MAE/R²:** Performance across all test samples (weighted average)
+- **Cell0/Cell1 MAE:** Performance on samples from each cell (to assess whether segmentation resolves the Cell1 imbalance)
+- **Improvement:** MAE reduction vs global baseline
+
+**Note on BS Clustering:** These strategies cluster 816 base stations into k homogeneous groups (k=3, 5, or 7). Each sample is predicted by the model corresponding to its base station's cluster. Cell0/Cell1 MAE breakdown shows whether BS clustering helps resolve the cell-level performance gap.
+
+| Strategy | Segmentation | # Models | Overall MAE | Overall R² | Cell0 MAE | Cell1 MAE | Improvement |
+|----------|--------------|----------|-------------|------------|-----------|-----------|-------------|
+| **Global (baseline)** | None | 1 | 3.14 W | 0.8942 | 2.72 W | 4.19 W | - |
+| **Cell-Specific** | By cell | 2 | ? | ? | ? | ? | ? |
+| **BS Clustering (k=3)** | 816 BSs → 3 groups | 3 | ? | ? | ? | ? | ? |
+| **BS Clustering (k=5)** | 816 BSs → 5 groups | 5 | ? | ? | ? | ? | ? |
+| **BS Clustering (k=7)** | 816 BSs → 7 groups | 7 | ? | ? | ? | ? | ? |
+| **Hierarchical** | BS → Cell → Global | Variable | ? | ? | ? | ? | ? |
+| **Mixed Effects** | Global + BS adjustments | 1 + 816 | ? | ? | ? | ? | ? |
 
 #### 6.6 Success Criteria
 
@@ -1153,9 +1185,10 @@ Experiment 2 (✅ COMPLETE)
            ├─X Experiment 5: Ensemble Methods (⏭️ SKIPPED per decision rule)
            │      └─> Rationale: Exp 4 showed < 1% gain, tuning hit ceiling
            │
-           └─> Experiment 6: Cell/BS-Specific Models (🔵 NEXT)
+           └─> Experiment 6: Segmented Models (🔵 NEXT)
                   └─> Goal: MAE < 3.00 W (3% improvement needed)
                   └─> Baseline: Use Exp 2 default model (3.14 W)
+                  └─> Test 2 cell-specific + 3 BS clustering strategies
                          │
                          ├─> If MAE < 3.00 W ──> DEPLOY SEGMENTED MODEL
                          ├─> If 3.00 ≤ MAE < 3.11 W ──> DEPLOY EXP 2 (simpler)
@@ -1171,7 +1204,7 @@ Experiment 2 (✅ COMPLETE)
 | Exp 3: Full Features | 3.14 W | 0.8937 | 0.0% | 6.0% | ✅ COMPLETE |
 | Exp 4: Hyperparameter Tuning | 3.11 W | 0.8982 | 0.87% | 6.87% | ✅ COMPLETE (⚠️ Below 1% target) |
 | **Exp 5: Ensemble Methods** | **< 3.08 W** | **> 0.898** | **1%** | **9%** | ⏭️ SKIP (per decision rules) |
-| **Exp 6: Cell-Specific Models** | **< 3.00 W** | **> 0.905** | **3%** | **12%** | 🔵 NEXT |
+| **Exp 6: Segmented Models** | **< 3.00 W** | **> 0.905** | **3%** | **12%** | 🔵 NEXT |
 
 ### Success Criteria
 
@@ -1197,8 +1230,9 @@ Experiment 2 (✅ COMPLETE)
    - Proceed directly to Experiment 6 using Experiment 2 default model as baseline
 
 3. **After Experiment 6:** 🔵 **PENDING**
-   - If cell-specific models add ≥ 1% value: Deploy segmented approach
-   - If cell-specific models add < 1% value: Deploy Exp 2 default model (3.14 W)
+   - If segmented models add ≥ 1% value: Deploy segmented approach
+   - If segmented models add < 1% value: Deploy Exp 2 default model (3.14 W)
+   - Select best segmentation strategy (cell-specific vs BS clustering vs hybrid)
    - Document complexity vs. performance trade-off
 
 4. **Final Decision:** 🔵 **PENDING**
@@ -1219,9 +1253,9 @@ Experiment 2 (✅ COMPLETE)
 2. ⏭️ **Experiment 5 (Ensemble Methods):** Skipped per decision rule (Exp 4 < 1% improvement)
 
 **Remaining:**
-3. 🔵 **Experiment 6 (Cell-Specific Models):** ~3-4 hours implementation + 2-3 hours computation
+3. 🔵 **Experiment 6 (Segmented Models):** ~3-4 hours implementation + 2-3 hours computation
    - Use Experiment 2 default model as baseline
-   - Test 4 segmentation strategies
+   - Test 2 cell-specific + 3 BS clustering + 2 hybrid strategies (7 total approaches)
 
 **Total Actual Effort (so far):** 6 hours implementation + 3 hours computation
 
@@ -1247,7 +1281,7 @@ Experiment 2 (✅ COMPLETE)
 **Experiments Status:**
 - ✅ **Completed:** Experiments 1-4 (Baseline, Time Features, Full Features, Hyperparameter Tuning)
 - ⏭️ **Skipped:** Experiment 5 (Ensemble Methods) - per decision rules
-- 🔵 **Next:** Experiment 6 (Cell/BS-Specific Models) - strong evidence for 3-12% improvement
+- 🔵 **Next:** Experiment 6 (Segmented Models) - strong evidence for 3-12% improvement
 
 **Best Model So Far:**
 - **Option A (Recommended):** Experiment 2 default LightGBM (MAE = 3.14 W, R² = 0.8942)
@@ -1263,6 +1297,6 @@ Experiment 2 (✅ COMPLETE)
 3. **Segmentation shows promise** - Cell1 has 54% worse performance, 204 high-error BSs identified
 4. **Next step is critical** - Need 3% improvement from Experiment 6 to reach 10% target
 
-**Next Action:** Implement Experiment 6 (Cell/BS-Specific Models) to test segmentation approach.
+**Next Action:** Implement Experiment 6 (Segmented Models) to test cell-level and BS-level segmentation approaches.
 
 **Target:** Achieve MAE < 3.00 W (10% total improvement over baseline) to meet minimum success criteria.
